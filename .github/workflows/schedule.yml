@@ -1,4 +1,4 @@
-name: DouYin Spark Flow Schedule Run
+name: douyin-huohua-2gai
 on:
   workflow_dispatch: # 允许手动触发
   schedule: # 定时任务
