@@ -92,6 +92,19 @@ def normalize_targets(targets, username):
     return normalized_targets
 
 
+def parse_tasks(raw_tasks):
+    """Parse TASKS while tolerating accidental line breaks inside target names."""
+    try:
+        tasks = json.loads(raw_tasks, strict=False)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"TASKS 不是有效的 JSON: {exc}") from exc
+
+    if not isinstance(tasks, list):
+        raise ValueError("TASKS 必须是 JSON 数组")
+
+    return tasks
+
+
 def get_userData():
     """
     获取用户数据目录
@@ -102,7 +115,7 @@ def get_userData():
     if userData:
         return userData
 
-    tasks = json.loads(os.getenv("TASKS", "[]"))
+    tasks = parse_tasks(os.getenv("TASKS", "[]"))
 
     userData = []
 
