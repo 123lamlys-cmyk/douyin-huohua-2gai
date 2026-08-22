@@ -31,7 +31,16 @@ def handle_response(response: Response):
 
     try:
         json_data = response.json()
-        for item in json_data.get("data", []):
+        if not isinstance(json_data, dict):
+            logger.debug("用户信息接口返回的不是 JSON 对象，已忽略")
+            return
+
+        items = json_data.get("data") or []
+        if not isinstance(items, list):
+            logger.debug("用户信息接口 data 字段不是列表，已忽略")
+            return
+
+        for item in items:
             short_id = item.get("short_id")
             unique_id = item.get("unique_id")
             sec_uid = item.get("sec_uid", "")
@@ -47,10 +56,7 @@ def handle_response(response: Response):
                 remark_name,
             ]
     except Exception as e:
-        tb = traceback.extract_tb(e.__traceback__)
-        last = tb[-1]
-        print(f"解析响应失败: {e}")
-        print(f"文件: {last.filename}, 行号: {last.lineno}, 函数: {last.name}")
+        logger.warning(f"解析用户信息接口响应失败，已忽略: {e}")
 
 
 def retry_operation(name, operation, retries=3, delay=2, *args, **kwargs):
@@ -176,6 +182,27 @@ def scroll_and_select_user(page, account_name, targets):
             time.sleep(1.5)
 
 
+def save_failure_diagnostics(page, account_name):
+    """保存短期诊断信息，供 GitHub Actions artifact 排查失败原因。"""
+    timestamp = int(time.time())
+    screenshot_path = f"logs/failure-{timestamp}.png"
+    info_path = f"logs/failure-{timestamp}.txt"
+
+    try:
+        page.screenshot(path=screenshot_path, full_page=True, timeout=10000)
+        logger.info(f"账号 {account_name} 的失败截图已保存到 {screenshot_path}")
+    except Exception as e:
+        logger.warning(f"账号 {account_name} 保存失败截图时出错: {e}")
+
+    try:
+        with open(info_path, "w", encoding="utf-8") as info_file:
+            info_file.write(f"url={page.url}\n")
+            info_file.write(f"title={page.title()}\n")
+        logger.info(f"账号 {account_name} 的页面信息已保存到 {info_path}")
+    except Exception as e:
+        logger.warning(f"账号 {account_name} 保存页面信息时出错: {e}")
+
+
 def do_user_task(browser, account_name, cookies, targets):
     context = browser.new_context()
     context.set_default_navigation_timeout(config["browserTimeout"])
@@ -184,48 +211,79 @@ def do_user_task(browser, account_name, cookies, targets):
     page = context.new_page()
     page.on("response", handle_response)
 
-    context.add_cookies(cookies)
+    try:
+        if not targets:
+            raise RuntimeError(f"账号 {account_name} 没有配置目标好友")
 
-    retry_operation(
-        "打开抖音网页聊天页面",
-        page.goto,
-        retries=config["taskRetryTimes"],
-        delay=5,
-        url="https://www.douyin.com/chat",
-    )
+        context.add_cookies(cookies)
 
-    time.sleep(5)
-
-    logger.debug(f"账号 {account_name} 开始发送消息")
-    for target_symbol in scroll_and_select_user(page, account_name, targets):
-        logger.debug(f"账号 {account_name} 已选中好友 {target_symbol}，准备发送消息")
-        page.wait_for_selector(CHAT_EDITOR_SELECTOR, timeout=config["browserTimeout"])
-        chat_input = page.locator(CHAT_EDITOR_SELECTOR)
-
-        message = build_message()
-        message_lines = message.split("\\n")
-        if len(message_lines) == 1 and "\n" in message:
-            message_lines = message.splitlines()
-
-        for index, line in enumerate(message_lines):
-            chat_input.type(line)
-            if index < len(message_lines) - 1:
-                chat_input.press("Shift+Enter")
-
-        logger.debug(
-            f"账号 {account_name} 准备发送消息给好友 {target_symbol}：\n\t{message}"
+        retry_operation(
+            "打开抖音网页聊天页面",
+            page.goto,
+            retries=config["taskRetryTimes"],
+            delay=5,
+            url="https://www.douyin.com/chat",
+            wait_until="domcontentloaded",
         )
-        chat_input.press("Enter")
-        logger.debug(f"账号 {account_name} 给好友 {target_symbol} 发送消息完成")
-        time.sleep(2)
 
-    context.close()
+        page.wait_for_selector(
+            CONVERSATION_LIST_SELECTOR,
+            state="visible",
+            timeout=config["browserTimeout"],
+        )
+        logger.info(f"账号 {account_name} 聊天页面和会话列表加载成功")
+
+        sent_targets = set()
+        expected_target_count = len(set(targets))
+        for target_symbol in scroll_and_select_user(page, account_name, targets):
+            logger.debug(f"账号 {account_name} 已选中好友 {target_symbol}，准备发送消息")
+            page.wait_for_selector(CHAT_EDITOR_SELECTOR, timeout=config["browserTimeout"])
+            chat_input = page.locator(CHAT_EDITOR_SELECTOR)
+
+            message = build_message()
+            message_lines = message.split("\\n")
+            if len(message_lines) == 1 and "\n" in message:
+                message_lines = message.splitlines()
+
+            for index, line in enumerate(message_lines):
+                chat_input.type(line)
+                if index < len(message_lines) - 1:
+                    chat_input.press("Shift+Enter")
+
+            logger.debug(
+                f"账号 {account_name} 准备发送消息给好友 {target_symbol}：\n\t{message}"
+            )
+            chat_input.press("Enter")
+            sent_targets.add(target_symbol)
+            logger.info(
+                f"账号 {account_name} 已提交 {len(sent_targets)}/{expected_target_count} 个目标的消息"
+            )
+            time.sleep(2)
+
+        if len(sent_targets) != expected_target_count:
+            raise RuntimeError(
+                f"账号 {account_name} 只完成了 {len(sent_targets)}/{expected_target_count} 个目标，"
+                "请检查 Cookie、好友标识或页面结构"
+            )
+
+        return len(sent_targets)
+    except Exception:
+        save_failure_diagnostics(page, account_name)
+        raise
+    finally:
+        try:
+            context.close()
+        except Exception as e:
+            logger.warning(f"账号 {account_name} 关闭浏览器上下文时出错: {e}")
 
 
 def runTasks():
     playwright, browser = get_browser()
     try:
         logger.info("开始执行任务")
+        if not userData:
+            raise RuntimeError("没有可执行的账号，请检查 TASKS 和对应的 COOKIES_* Secret")
+
         logger.debug("当前配置如下：")
         logger.debug(f"消息模板: {config.get('messageTemplate', '未找到消息模板')}")
         logger.debug(f"一言类型: {config['hitokotoTypes']}")
@@ -234,13 +292,19 @@ def runTasks():
                 f"用户: {user.get('username', '未知用户')}, 目标好友: {user['targets']}"
             )
 
+        total_sent = 0
         for user in userData:
             cookies = user["cookies"]
             targets = user["targets"]
             account_name = user.get("username", "未知用户")
             logger.info(f"开始处理账号 {account_name}")
-            do_user_task(browser, account_name, cookies, targets)
-            logger.info(f"账号 {account_name} 任务完成")
+            sent_count = do_user_task(browser, account_name, cookies, targets)
+            total_sent += sent_count
+            logger.info(f"账号 {account_name} 任务完成，共提交 {sent_count} 条消息")
+
+        if total_sent == 0:
+            raise RuntimeError("任务未向任何目标提交消息")
+        logger.info(f"全部任务执行完成，共提交 {total_sent} 条消息")
     finally:
         browser.close()
         playwright.stop()

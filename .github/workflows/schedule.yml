@@ -2,7 +2,7 @@ name: douyin-huohua-2gai
 on:
   workflow_dispatch: # 允许手动触发
   schedule: # 定时任务
-    - cron: "20 18 * * *" # 每天 21:20 UTC（北京时间 5:20）
+    - cron: "20 18 * * *" # 每天 18:20 UTC（北京时间次日 02:20）
 jobs:
   run-main:
     timeout-minutes: 20
@@ -16,7 +16,10 @@ jobs:
         python-version: '3.11'
     - name: Test Douyin Accessibility
       run: |
-        curl -I https://creator.douyin.com/
+        curl -L --max-time 30 --silent --show-error \
+          --output /dev/null \
+          --write-out 'www.douyin.com/chat HTTP %{http_code}\n' \
+          https://www.douyin.com/chat || true
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -31,10 +34,11 @@ jobs:
     - name: Run DouYin Spark Flow
       run: python main.py
     - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
+      if: ${{ always() }}
       with:
         name: run-logs
         path: logs/
+        retention-days: 3
   workflow-keepalive:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
