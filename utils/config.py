@@ -1,10 +1,10 @@
 import json
 import logging
 import os
+import re
 import sys
 from enum import Enum
 
-from utils import norm
 from utils.logger import setup_logger
 
 logger = setup_logger(level=logging.DEBUG)
@@ -74,7 +74,10 @@ def normalize_targets(targets, username):
     duplicate_targets = []
 
     for target in targets or []:
-        normalized_target = norm("" if target is None else str(target))
+        normalized_target = "" if target is None else str(target)
+        normalized_target = normalized_target.replace("\u3000", " ").replace("\xa0", " ")
+        normalized_target = normalized_target.replace("\u200b", "").replace("\ufeff", "")
+        normalized_target = re.sub(r"\s+", " ", normalized_target).strip()
         if not normalized_target:
             continue
         if normalized_target in seen_targets:

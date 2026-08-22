@@ -19,6 +19,11 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "JSON 数组"):
             parse_tasks('{"targets": []}')
 
+    def test_normalize_targets_preserves_fullwidth_punctuation(self):
+        targets = ["拉脱维亚历史第一狙击手（道心破碎版）"]
+
+        self.assertEqual(normalize_targets(targets, "测试用户"), targets)
+
 
 if __name__ == "__main__":
     unittest.main()
