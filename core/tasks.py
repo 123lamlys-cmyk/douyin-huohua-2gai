@@ -190,7 +190,7 @@ def scroll_and_select_user(page, account_name, targets):
 
 
 def search_and_select_user(page, account_name, targets):
-    """通过聊天页搜索框按备注、昵称或抖音号逐个定位目标。"""
+    """通过聊天页搜索框按会话名称或备注逐个定位目标。"""
     search_input = page.locator(SEARCH_INPUT_SELECTOR).first
     search_input.wait_for(state="visible", timeout=config["browserTimeout"])
 
@@ -315,7 +315,7 @@ def do_user_task(browser, account_name, cookies, targets):
         if len(sent_targets) != expected_target_count:
             raise RuntimeError(
                 f"账号 {account_name} 只完成了 {len(sent_targets)}/{expected_target_count} 个目标，"
-                "请检查 Cookie、好友标识或页面结构"
+                "请将 targets 配置为聊天页左侧显示的会话名称或备注"
             )
 
         return len(sent_targets)

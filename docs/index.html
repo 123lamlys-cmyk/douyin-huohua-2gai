@@ -173,9 +173,9 @@
                                     <el-form-item label="Cookies【JSON格式】">
                                         <el-input v-model="activeAccount.cookies" :rows="4" type="textarea" />
                                     </el-form-item>
-                                    <el-form-item label="目标好友（回车）">
+                                    <el-form-item label="目标会话名称/备注（回车）">
                                         <el-input-tag v-model="activeAccount.targets" tag-type="info" tag-effect="plain"
-                                            placeholder="Please input">
+                                            placeholder="填写聊天页显示的名称或备注">
                                             <template #tag="{ value }">
                                                 <div class="flex items-center">
                                                     <span>{{ value }}</span>

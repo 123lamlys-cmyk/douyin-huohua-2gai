@@ -14,7 +14,7 @@ const app = createApp({
 
     const match_mode_options = [
       { id: "nickname", label: "昵称", value: "nickname" },
-      { id: "short_id", label: "抖音号", value: "short_id" },
+      { id: "short_id", label: "抖音号（新版聊天页不支持）", value: "short_id", disabled: true },
     ];
 
     const log_level_options = [
