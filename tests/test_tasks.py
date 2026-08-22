@@ -92,7 +92,7 @@ class TasksTests(unittest.TestCase):
         tasks.handle_response(FakeResponse({"data": None}))
 
     @patch.object(tasks, "save_failure_diagnostics")
-    @patch.object(tasks, "scroll_and_select_user", return_value=iter(()))
+    @patch.object(tasks, "search_and_select_user", return_value=iter(()))
     def test_no_matching_targets_fails_the_task(self, _select, diagnostics):
         with self.assertRaisesRegex(RuntimeError, "0/2"):
             tasks.do_user_task(FakeBrowser(), "account", [], ["one", "two"])
@@ -100,7 +100,7 @@ class TasksTests(unittest.TestCase):
 
     @patch.object(
         tasks,
-        "scroll_and_select_user",
+        "search_and_select_user",
         return_value=iter(("one", "two")),
     )
     def test_all_targets_returns_sent_count(self, _select):

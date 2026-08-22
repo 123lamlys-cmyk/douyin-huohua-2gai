@@ -1,3 +1,4 @@
+import re
 import time
 import traceback
 
@@ -17,7 +18,13 @@ userIDDict = {}
 CONVERSATION_ITEM_SELECTOR = ".conversationConversationItemwrapper"
 CONVERSATION_TITLE_SELECTOR = ".conversationConversationItemtitle"
 CONVERSATION_LIST_SELECTOR = ".conversationConversationListwrapper"
-CHAT_EDITOR_SELECTOR = ".messageEditorimChatEditorContainer"
+CHAT_EDITOR_SELECTOR = (
+    '.messageEditorimChatEditorContainer '
+    '[data-slate-editor="true"][contenteditable="true"]'
+)
+SEARCH_INPUT_SELECTOR = 'input.semi-input[placeholder="搜索"]'
+SEARCH_RESULT_SELECTOR = ".SearchPanelitembox"
+SEARCH_ACTION_PATTERN = re.compile(r"^(发消息|发私信)$")
 
 
 def handle_response(response: Response):
@@ -182,6 +189,51 @@ def scroll_and_select_user(page, account_name, targets):
             time.sleep(1.5)
 
 
+def search_and_select_user(page, account_name, targets):
+    """通过聊天页搜索框按备注、昵称或抖音号逐个定位目标。"""
+    search_input = page.locator(SEARCH_INPUT_SELECTOR).first
+    search_input.wait_for(state="visible", timeout=config["browserTimeout"])
+
+    retry_count = max(1, config["taskRetryTimes"])
+    result_timeout = min(config["browserTimeout"], 10000)
+
+    for target in targets:
+        target = str(target)
+        selected = False
+
+        for attempt in range(1, retry_count + 1):
+            search_input.fill("")
+            time.sleep(0.5)
+            search_input.fill(target)
+
+            result = page.locator(SEARCH_RESULT_SELECTOR).filter(
+                has=page.get_by_text(SEARCH_ACTION_PATTERN)
+            ).first
+
+            try:
+                result.wait_for(state="visible", timeout=result_timeout)
+                result.get_by_text(SEARCH_ACTION_PATTERN).first.click(timeout=5000)
+                logger.info(f"账号 {account_name} 已通过搜索定位目标 {target}")
+                selected = True
+                yield target
+                break
+            except Exception as e:
+                if attempt < retry_count:
+                    logger.warning(
+                        f"账号 {account_name} 第 {attempt} 次搜索目标 {target} 未命中，正在重试: {e}"
+                    )
+                    time.sleep(1.5)
+                else:
+                    logger.warning(
+                        f"账号 {account_name} 搜索目标 {target} 失败，已达到最大重试次数"
+                    )
+
+        if not selected:
+            continue
+
+    search_input.fill("")
+
+
 def save_failure_diagnostics(page, account_name):
     """保存短期诊断信息，供 GitHub Actions artifact 排查失败原因。"""
     timestamp = int(time.time())
@@ -235,7 +287,7 @@ def do_user_task(browser, account_name, cookies, targets):
 
         sent_targets = set()
         expected_target_count = len(set(targets))
-        for target_symbol in scroll_and_select_user(page, account_name, targets):
+        for target_symbol in search_and_select_user(page, account_name, targets):
             logger.debug(f"账号 {account_name} 已选中好友 {target_symbol}，准备发送消息")
             page.wait_for_selector(CHAT_EDITOR_SELECTOR, timeout=config["browserTimeout"])
             chat_input = page.locator(CHAT_EDITOR_SELECTOR)
